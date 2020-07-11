@@ -1,0 +1,206 @@
+---
+title: "Winequality_White"
+author: "Charlotte Bahr"
+date: "6/27/2020"
+output: word_document
+---
+
+```{r}
+library(kerasR) #DNN
+library(keras)
+library(tensorflow)#DNN
+library(data.table)
+library(dataPreparation)
+library(e1071) #Naive Bayes
+library(randomForest) #random Forest
+library(class) #k-Nearest Neighbor 
+library(kernlab) #Support Vector Machine
+library(mlbench)#contains Glass data
+library(keras) #contains MNIST data
+library(caret)
+library(mltest)
+library(dplyr)
+use_session_with_seed(9123)
+
+## DATA PRE-PROCESSING
+wq <- read.csv("~/Desktop/Bachelorarbeit/R/R_Files/winequality-white.csv", sep=";")
+
+wq$quality[wq$quality > 8] <- "8"
+wq$quality[wq$quality < 4] <- "4"
+
+wq <- as.data.frame(wq)
+
+set.seed(1234)
+train_index_SC <-  sample(1:nrow(wq), 0.7*nrow(wq))
+test_index_SC <- setdiff (1:nrow(wq), train_index_SC)
+
+Train <- wq[train_index_SC,]
+Test <- wq[test_index_SC,]
+
+True_Label <- Test$quality
+
+#prep for DNN
+
+X_train <- Train %>% 
+  select(-quality) %>% 
+  scale()
+
+Y_train <- to_categorical(Train$quality)
+
+X_test <- Test %>% 
+  select(-quality) %>% 
+  scale()
+
+Y_test <- to_categorical(Test$quality)
+
+##MODELS 
+
+#k-Nearest Neighbor
+
+pc <- proc.time()
+model_KNN <- knn(Train, Test, as.factor(Train$quality), k=58)
+print(proc.time() - pc)
+
+#Naive Bayes
+
+pc <- proc.time()  
+model_NB <- naiveBayes(as.factor(Train$quality) ~. , Train)
+print(proc.time() - pc)
+
+#Random Forest
+
+pc <- proc.time() 
+model_RF <- randomForest(as.factor(Train$quality) ~. , Train)
+print(proc.time() - pc)
+
+#Support Vector Machine
+ 
+pc <- proc.time()  
+model_SVM <- ksvm(Train$quality ~. , Train, type = "C-svc", C = 1, kernel = "rbfdot" )
+print(proc.time() - pc)
+
+#Deep Neural Network
+
+
+pc <- proc.time() 
+set.seed(42)
+
+model_DNN <- Sequential()
+
+model_DNN$add(Dense(units=250, input_shape = dim(X_train)[2]))
+model_DNN$add(LeakyReLU())
+model_DNN$add(Dropout(0.4))
+
+model_DNN$add(Dense(units=250))
+model_DNN$add(LeakyReLU())
+model_DNN$add(Dropout(0.3))
+
+model_DNN$add(Dense(units=250))
+model_DNN$add(LeakyReLU())
+model_DNN$add(Dropout(0.2))
+
+model_DNN$add(Dense(9))
+model_DNN$add(Activation("softmax"))
+
+# compile
+keras_compile(model_DNN, loss ="categorical_crossentropy", optimizer = RMSprop(), metrics = "accuracy")
+keras_fit(model_DNN, X_train, Y_train, batch_size = 128, epochs = 32, verbose= 1, validation_split = 0.2)
+
+print(proc.time() - pc)
+
+
+##EVALUATION METRICS
+
+#predictions
+
+pred_KNN <- #has no prediction value
+
+pred_NB <-  as.factor(predict(model_NB, Test))
+
+pred_RF <- as.factor(predict(model_RF, Test))
+
+pred_SVM <- as.factor(predict(model_SVM, Test))
+
+pred_DNN <- as.factor(keras_predict_classes(model_DNN, X_test))
+
+
+CF_KNN <- table(model_KNN, True_Label)
+  
+CF_NB <- table(pred_NB, True_Label)
+  
+CF_RF <- table(pred_RF, True_Label)
+  
+CF_SVM <- table(pred_SVM, True_Label)
+
+CF_DNN <- table(pred_DNN, True_Label)
+
+
+print(CF_KNN)
+print(CF_NB)
+print(CF_RF)
+print(CF_SVM)
+print(CF_DNN)
+
+#metrics
+set.seed(2445)
+
+ml_test_KNN <- ml_test(model_KNN, True_Label, output.as.table = FALSE)
+
+ml_test_NB <- ml_test(pred_NB, True_Label, output.as.table = FALSE)
+
+ml_test_RF <- ml_test(pred_RF, True_Label, output.as.table = FALSE)
+
+ml_test_SVM <- ml_test(pred_SVM, True_Label, output.as.table = FALSE)
+
+ml_test_DNN <- ml_test(pred_DNN, True_Label, output.as.table = FALSE)
+
+#Macro Average Accuracy
+
+MAvA_KNN <- print((sum(ml_test_KNN$balanced.accuracy, na.rm = TRUE))/5)
+  
+MAvA_NB <- print((sum(ml_test_NB$balanced.accuracy, na.rm = TRUE))/5)
+
+MAvA_RF <- print((sum(ml_test_RF$balanced.accuracy, na.rm = TRUE))/5)
+
+MAvA_SVM <- print((sum(ml_test_SVM$balanced.accuracy, na.rm = TRUE))/5)
+
+MAvA_DNN <- print((sum(ml_test_DNN$balanced.accuracy, na.rm = TRUE))/5)
+
+
+#Macro Average F1 
+
+MAvF1_KNN <- print((sum(ml_test_KNN$F1, na.rm = TRUE))/5)
+  
+MAvF1_NB <- print((sum(ml_test_NB$F1, na.rm = TRUE))/5)
+  
+MAvF1_RF <- print((sum(ml_test_RF$F1, na.rm = TRUE))/5)
+
+MAvF1_SVM <- print((sum(ml_test_SVM$F1, na.rm = TRUE))/5)
+  
+MAvF1_DNN <- print((sum(ml_test_DNN$F1, na.rm = TRUE))/5)
+  
+#MAvMCC
+
+MAvMCC_KNN <- print((sum(ml_test_KNN$MCC, na.rm = TRUE))/5)
+
+MAvMCC_NB <- print((sum(ml_test_NB$MCC, na.rm = TRUE))/5)
+
+MAvMCC_RF <- print((sum(ml_test_RF$MCC, na.rm = TRUE))/5)
+
+MAvMCC_SVM <- print((sum(ml_test_SVM$MCC, na.rm = TRUE))/5)
+
+MAvMCC_DNN <- print((sum(ml_test_DNN$MCC, na.rm = TRUE))/5)
+
+#MAvGeometricMean
+
+MAvGM_KNN <- print((sum(ml_test_KNN$geometric.mean, na.rm = TRUE))/5)
+
+MAvGM_NB <- print((sum(ml_test_NB$geometric.mean, na.rm = TRUE))/5)
+
+MAvGM_RF <- print((sum(ml_test_RF$geometric.mean, na.rm = TRUE))/5)
+
+MAvGM_SVM <- print((sum(ml_test_SVM$geometric.mean, na.rm = TRUE))/5)
+
+MAvGM_DNN <- print((sum(ml_test_DNN$geometric.mean, na.rm = TRUE))/5)
+
+```
