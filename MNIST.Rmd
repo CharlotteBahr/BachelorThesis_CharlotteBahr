@@ -1,0 +1,212 @@
+----
+title: "MNIST"
+author: "Charlotte Bahr"
+date: "6/27/2020"
+output: word_document
+---
+
+```{r}
+library(kerasR) #DNN
+library(tensorflow)#DNN
+library(data.table)
+library(dataPreparation)
+library(e1071) #Naive Bayes
+library(randomForest) #random Forest
+library(class) #k-Nearest Neighbor 
+library(kernlab) #Support Vector Machine
+library(mlbench)#contains Glass data
+library(keras) #contains MNIST data
+library(caret)
+library(mltest)
+library(dplyr) #wg. select
+use_session_with_seed(9876)
+
+## DATA PRE PROCESSING
+
+mnist <- dataset_mnist()
+
+set.seed(1234)
+mnist <- as.data.frame(mnist$train)
+nzv <- as.matrix(nearZeroVar(mnist, saveMetrics= FALSE))
+mnist <- mnist[,-(as.matrix(nearZeroVar(mnist, saveMetrics= FALSE)))]
+
+standard.features <- scale(mnist[,1:249])
+mnist <- cbind(standard.features, mnist[250])
+
+set.seed(1234)
+train_index <-  sample(1:nrow(mnist), 0.7*nrow(mnist))
+test_index <- setdiff(1:nrow(mnist), train_index)
+
+Train <- mnist[train_index,]
+Test <- mnist[test_index,]
+
+True_Label <- Test$y
+
+# Reshape & rescale & One_hot
+
+X_train <- Train %>% 
+  select(-y)%>% 
+  as.matrix()
+
+Y_train <- to_categorical(Train$y)
+
+X_test <- Test %>% 
+  select(-y)%>% 
+  as.matrix()
+
+Y_test <- to_categorical(Test$y)
+
+##MODELS 
+
+#k-Nearest Neighbor
+
+pc <- proc.time()
+model_KNN <- knn(Train[1:249], Test[1:249], as.factor(Train$y), k=205)  ##sqrt42000 =204,939
+print(proc.time() - pc)
+
+#Naive Bayes
+
+pc <- proc.time()  
+model_NB <- naiveBayes(as.factor(Train$y) ~. , Train[1:249])
+print(proc.time() - pc)
+
+#Random Forest
+
+pc <- proc.time() 
+model_RF <- randomForest(as.factor(Train$y) ~. , Train[1:249])
+print(proc.time() - pc)
+
+#Support Vector Machine
+ 
+pc <- proc.time()  
+model_SVM <- ksvm(Train$y ~. , Train[1:249], type = "C-svc", C = 1, kernel = "rbfdot" )
+print(proc.time() - pc)
+
+
+#Deep Neural Network
+
+pc <- proc.time() 
+
+model_DNN <- Sequential()
+
+model_DNN$add(Dense(units=250, input_shape = dim(X_train)[2]))
+model_DNN$add(LeakyReLU())
+model_DNN$add(Dropout(0.4))
+
+model_DNN$add(Dense(units=250))
+model_DNN$add(LeakyReLU())
+model_DNN$add(Dropout(0.3))
+
+model_DNN$add(Dense(units=250))
+model_DNN$add(LeakyReLU())
+model_DNN$add(Dropout(0.2))
+
+model_DNN$add(Dense(units=250))
+model_DNN$add(LeakyReLU())
+model_DNN$add(Dropout(0.1))
+
+model_DNN$add(Dense(10))
+model_DNN$add(Activation("softmax"))
+
+# compile
+keras_compile(model_DNN, loss ="categorical_crossentropy", optimizer = RMSprop(), metrics = "accuracy")
+keras_fit(model_DNN, as.matrix(X_train), Y_train, batch_size = 128, epochs = 32, verbose= 1, validation_split = 0.2)
+
+print(proc.time() - pc)
+
+
+##EVALUATION METRICS
+
+#predictions
+set.seed(8912)
+
+pred_KNN <- #has no prediction value
+
+pred_NB <-  as.factor(predict(model_NB, Test))
+
+pred_RF <- as.factor(predict(model_RF, Test))
+
+pred_SVM <- as.factor(predict(model_SVM, Test))
+
+pred_DNN <- as.factor(keras_predict_classes(model_DNN, as.matrix(X_test)))
+
+
+CF_KNN <- table(model_KNN, True_Label)
+  
+CF_NB <- table(pred_NB, True_Label)
+  
+CF_RF <- table(pred_RF, True_Label)
+  
+CF_SVM <- table(pred_SVM, True_Label)
+
+CF_DNN <- table(pred_DNN, True_Label)
+
+
+print(CF_KNN)
+print(CF_NB)
+print(CF_RF)
+print(CF_SVM)
+print(CF_DNN)
+
+#metrics
+
+ml_test_KNN <- ml_test(model_KNN, True_Label, output.as.table = FALSE)
+
+ml_test_NB <- ml_test(pred_NB, True_Label, output.as.table = FALSE)
+
+ml_test_RF <- ml_test(pred_RF, True_Label, output.as.table = FALSE)
+
+ml_test_SVM <- ml_test(pred_SVM, True_Label, output.as.table = FALSE)
+
+ml_test_DNN <- ml_test(pred_DNN, True_Label, output.as.table = FALSE)
+
+#Macro Average Accuracy
+
+MAvA_KNN <- print((sum(ml_test_KNN$balanced.accuracy, na.rm = TRUE))/10)
+  
+MAvA_NB <- print((sum(ml_test_NB$balanced.accuracy, na.rm = TRUE))/10)
+
+MAvA_RF <- print((sum(ml_test_RF$balanced.accuracy, na.rm = TRUE))/10)
+
+MAvA_SVM <- print((sum(ml_test_SVM$balanced.accuracy, na.rm = TRUE))/10)
+
+MAvA_DNN <- print((sum(ml_test_DNN$balanced.accuracy, na.rm = TRUE))/10)
+
+
+#Macro Average F1 
+
+MAvF1_KNN <- print((sum(ml_test_KNN$F1, na.rm = TRUE))/10)
+  
+MAvF1_NB <- print((sum(ml_test_NB$F1, na.rm = TRUE))/10)
+  
+MAvF1_RF <- print((sum(ml_test_RF$F1, na.rm = TRUE))/10)
+
+MAvF1_SVM <- print((sum(ml_test_SVM$F1, na.rm = TRUE))/10)
+  
+MAvF1_DNN <- print((sum(ml_test_DNN$F1, na.rm = TRUE))/10)
+  
+#MAvMCC
+
+MAvMCC_KNN <- print((sum(ml_test_KNN$MCC, na.rm = TRUE))/10)
+
+MAvMCC_NB <- print((sum(ml_test_NB$MCC, na.rm = TRUE))/10)
+
+MAvMCC_RF <- print((sum(ml_test_RF$MCC, na.rm = TRUE))/10)
+
+MAvMCC_SVM <- print((sum(ml_test_SVM$MCC, na.rm = TRUE))/10)
+
+MAvMCC_DNN <- print((sum(ml_test_DNN$MCC, na.rm = TRUE))/10)
+
+#MAvGeometricMean
+
+MAvGM_KNN <- print((sum(ml_test_KNN$geometric.mean, na.rm = TRUE))/10)
+
+MAvGM_NB <- print((sum(ml_test_NB$geometric.mean, na.rm = TRUE))/10)
+
+MAvGM_RF <- print((sum(ml_test_RF$geometric.mean, na.rm = TRUE))/10)
+
+MAvGM_SVM <- print((sum(ml_test_SVM$geometric.mean, na.rm = TRUE))/10)
+
+MAvGM_DNN <- print((sum(ml_test_DNN$geometric.mean, na.rm = TRUE))/10)
+
+```
